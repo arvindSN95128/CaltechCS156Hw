@@ -27,7 +27,6 @@ these runs.
 """
 import numpy as np
 import random
-import collections
 
 #print('Inverse of\n'  + repr(np.array([[2, 2], [3, 1]])) + '\nis\n' + repr(np.linalg.inv(np.array([[2, 2], [3, 1]]))))
 
@@ -38,7 +37,7 @@ def execute_pla(iter_number, num_samples, start_with_regression_weigths = False)
     line passing through them), where one side of the line maps to +1 and the other maps
     to −1.
     """
-    random.seed(a = iter_number)
+    random.seed(a=iter_number)
     (x1, y1) = (random.uniform(-1, 1), random.uniform(-1, 1))
     (x2, y2) = (random.uniform(-1, 1), random.uniform(-1, 1))
 
@@ -54,13 +53,14 @@ def execute_pla(iter_number, num_samples, start_with_regression_weigths = False)
     # The side with (1/2, 1/2) is +1
     ref_sign = np.sign(m * 0.5 - 0.5 + c)
 
-    Samples = collections.namedtuple('Samples', ['input', 'output'])
-    samples = []
+    samples_in = np.empty([num_samples, 3])
+    samples_out = np.empty([num_samples, 1])
     for sample_ind in range(num_samples):
         x = random.uniform(-1, 1)
         y = random.uniform(-1, 1)
         output = 1 if np.sign(m * x - y + c) ==  ref_sign else -1
-        samples.append(Samples(np.array([1, x, y]), output))
+        samples_in[sample_ind] = [1, x, y]
+        samples_out[sample_ind] = output
 
 
     #print("samples are" + repr(samples))
@@ -74,17 +74,20 @@ def execute_pla(iter_number, num_samples, start_with_regression_weigths = False)
     random point). You can either calculate this probability exactly, or approximate it by generating a sufficiently large,
     separate set of points to estimate it.
     '''
-    weights = np.array([0, 0, 0])
+    if use_regression_weight:
+        weights = np.dot(np.linalg.pinv(samples_in), samples_out).T
+        print("Starting weights are " + repr(weights))
+    else:
+        weights = np.array([0, 0, 0])
     num_iter = 0
-    num_misclassified  = num_samples
 
-    while num_iter <= 1e8:
+    while num_iter <= 1e3:
         num_iter += 1
         ## get indices of all misclassified samples
         num_misclassified = 0
-        misclassified  = []
+        misclassified = []
         for samp_index in range(num_samples):
-            if (np.dot(weights, samples[samp_index].input) * samples[samp_index].output <= 0):
+            if np.sum(np.dot(weights.T, samples_in[samp_index])) * np.sum(samples_out[samp_index]) <= 0:
                 num_misclassified += 1
                 misclassified.append(samp_index)
 
@@ -93,39 +96,39 @@ def execute_pla(iter_number, num_samples, start_with_regression_weigths = False)
 
         # adjust weights to classify 1 random misclassified point
         rand_sample = random.randint(0, num_misclassified - 1)
-        weights = weights + samples[misclassified[rand_sample]].output * samples[misclassified[rand_sample]].input
-    ##end while
+        weights = weights + np.multiply(samples_out[misclassified[rand_sample]], samples_in[misclassified[rand_sample]])
+    # end while
 
-    #print("Target line is y = %.3f * x + %.3f. Num iter is %d" % (m, c, num_iter))
-    #print("Predicted line is y = %.3f x + %.3f" % (-1.0 * weights[1] / weights[2] , -1.0 * weights[0] / weights[2]))
+    # print("Target line is y = %.3f * x + %.3f. Num iter is %d" % (m, c, num_iter))
+    # print("Predicted line is y = %.3f x + %.3f" % (-1.0 * weights[1] / weights[2] , -1.0 * weights[0] / weights[2]))
 
-    #find prob or error
+    # find prob or error
     num_error = 0
     num_samples_to_calc_prob = 10000
-    for i in range(num_samples_to_calc_prob):
+    for ind in range(num_samples_to_calc_prob):
         x = random.uniform(-1, 1)
         y = random.uniform(-1, 1)
         target_val = 1 if np.sign(m * x - y + c) == ref_sign else -1
-        hyp_val  = 1 if np.dot(weights, np.array([1, x, y])) > 0 else -1
-        if (target_val != hyp_val):
+        hyp_val = 1 if np.sum(np.dot(weights, np.array([1, x, y]))) > 0 else -1
+        if target_val != hyp_val:
             num_error += 1
+
     return (num_iter, num_error * 1.0 / num_samples_to_calc_prob)
 
 
+for use_regression_weight in [False, True]:
+    ave_num_iter_converge = 0.0
+    ave_p_error = 0.0
+    num_runs = 10
+    num_samples = 10
+    '''
+    In order to get a reliable estimate for these two quantities, you should repeat
+        the experiment for 1000 runs (each run as specified above) and take the average over these runs.
+    '''
+    for i in range(num_runs):
+        (num_iter_converge, p_error) = execute_pla(i, num_samples, use_regression_weight)
+        ave_p_error += p_error
+        ave_num_iter_converge += num_iter_converge
 
-ave_num_iter_converge = 0.0
-ave_p_error = 0.0
-num_runs = 1000
-num_samples = 100
-'''
-In order to get a reliable estimate for these two quantities, you should repeat
-    the experiment for 1000 runs (each run as specified above) and take the average over these runs.
-'''
-for i in range(num_runs):
-    (num_iter_converge, p_error) = execute_pla(i, num_samples)
-    ave_p_error +=  p_error
-    ave_num_iter_converge += num_iter_converge
-
-
-print("Num samples : %d, Ave Prob error is %.3f and ave num iters is %.3f" % (num_samples, ave_p_error / num_runs, ave_num_iter_converge / num_runs))
+    print("use_regression_weight %d Num samples : %d, Ave Prob error is %.3f and ave num iters is %.3f" % (use_regression_weight, num_samples, ave_p_error / num_runs, ave_num_iter_converge / num_runs))
 
