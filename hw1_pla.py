@@ -30,7 +30,7 @@ import random
 
 #print('Inverse of\n'  + repr(np.array([[2, 2], [3, 1]])) + '\nis\n' + repr(np.linalg.inv(np.array([[2, 2], [3, 1]]))))
 
-def execute_pla(iter_number, num_samples, start_with_regression_weigths = False):
+def execute_pla(iter_number, num_samples, start_with_regression_weigths = False, ret_after_lin_reg = False):
     """
     Step 1: Choose a random line in the plane as your target function f (do this by
     taking two random, uniformly distributed points in [−1, 1] × [−1, 1] and taking the
@@ -53,14 +53,14 @@ def execute_pla(iter_number, num_samples, start_with_regression_weigths = False)
     # The side with (1/2, 1/2) is +1
     ref_sign = np.sign(m * 0.5 - 0.5 + c)
 
-    samples_in = np.empty([num_samples, 3])
-    samples_out = np.empty([num_samples, 1])
+    X = np.empty([num_samples, 3])
+    Y = np.empty([num_samples, 1])
     for sample_ind in range(num_samples):
         x = random.uniform(-1, 1)
         y = random.uniform(-1, 1)
-        output = 1 if np.sign(m * x - y + c) ==  ref_sign else -1
-        samples_in[sample_ind] = [1, x, y]
-        samples_out[sample_ind] = output
+        output = 1 if np.sign(m * x - y + c) == ref_sign else -1
+        X[sample_ind] = [1, x, y]
+        Y[sample_ind] = [output]
 
 
     #print("samples are" + repr(samples))
@@ -75,10 +75,22 @@ def execute_pla(iter_number, num_samples, start_with_regression_weigths = False)
     separate set of points to estimate it.
     '''
     if use_regression_weight:
-        weights = np.dot(np.linalg.pinv(samples_in), samples_out).T
-        print("Starting weights are " + repr(weights))
+        weights = np.dot(np.linalg.pinv(X), Y).T
+        num_errors = 0
+        #find E_in with regression weights
+        for sample_ind in range(num_samples):
+            if np.sum(np.dot(weights, X[sample_ind])) * np.sum(Y[sample_ind]) <= 0:
+                num_errors += 1
+        print("E_in with linear regression is %.3f" % (num_errors * 1.0 / num_samples))
+        E_in_with_lin_reg = num_errors * 1.0 / num_samples
+        if (ret_after_lin_reg):
+            return (0, 0, E_in_with_lin_reg)
+        # B = np.linalg.inv(np.dot(X.T, X))
+        # weights = np.dot(np.dot(B, X.T), Y).T
+        # print("Starting weights are " + repr(weights) + " with shape " + repr(np.shape(weights)))
     else:
-        weights = np.array([0, 0, 0])
+        weights = np.array([[0, 0, 0]])
+        # print("Starting weights are " + repr(weights) + " with shape " + repr(np.shape(weights)))
     num_iter = 0
 
     while num_iter <= 1e3:
@@ -87,7 +99,7 @@ def execute_pla(iter_number, num_samples, start_with_regression_weigths = False)
         num_misclassified = 0
         misclassified = []
         for samp_index in range(num_samples):
-            if np.sum(np.dot(weights.T, samples_in[samp_index])) * np.sum(samples_out[samp_index]) <= 0:
+            if np.sum(np.dot(weights, X[samp_index])) * np.sum(Y[samp_index]) <= 0:
                 num_misclassified += 1
                 misclassified.append(samp_index)
 
@@ -96,7 +108,7 @@ def execute_pla(iter_number, num_samples, start_with_regression_weigths = False)
 
         # adjust weights to classify 1 random misclassified point
         rand_sample = random.randint(0, num_misclassified - 1)
-        weights = weights + np.multiply(samples_out[misclassified[rand_sample]], samples_in[misclassified[rand_sample]])
+        weights = weights + np.multiply(Y[misclassified[rand_sample]], X[misclassified[rand_sample]])
     # end while
 
     # print("Target line is y = %.3f * x + %.3f. Num iter is %d" % (m, c, num_iter))
@@ -104,7 +116,7 @@ def execute_pla(iter_number, num_samples, start_with_regression_weigths = False)
 
     # find prob or error
     num_error = 0
-    num_samples_to_calc_prob = 10000
+    num_samples_to_calc_prob = 1000
     for ind in range(num_samples_to_calc_prob):
         x = random.uniform(-1, 1)
         y = random.uniform(-1, 1)
@@ -113,22 +125,25 @@ def execute_pla(iter_number, num_samples, start_with_regression_weigths = False)
         if target_val != hyp_val:
             num_error += 1
 
-    return (num_iter, num_error * 1.0 / num_samples_to_calc_prob)
+    return (num_iter, num_error * 1.0 / num_samples_to_calc_prob, E_in_with_lin_reg)
 
 
-for use_regression_weight in [False, True]:
+for use_regression_weight in [True]:
     ave_num_iter_converge = 0.0
     ave_p_error = 0.0
-    num_runs = 10
+    ave_lin_reg_e_in = 0.0
+    num_runs = 1000
     num_samples = 10
     '''
     In order to get a reliable estimate for these two quantities, you should repeat
         the experiment for 1000 runs (each run as specified above) and take the average over these runs.
     '''
     for i in range(num_runs):
-        (num_iter_converge, p_error) = execute_pla(i, num_samples, use_regression_weight)
+        (num_iter_converge, p_error, lin_reg_e_in) = execute_pla(i, num_samples, use_regression_weight, False)
         ave_p_error += p_error
         ave_num_iter_converge += num_iter_converge
+        ave_lin_reg_e_in += lin_reg_e_in
 
-    print("use_regression_weight %d Num samples : %d, Ave Prob error is %.3f and ave num iters is %.3f" % (use_regression_weight, num_samples, ave_p_error / num_runs, ave_num_iter_converge / num_runs))
+    print("use_regression_weight %d Num samples : %d, Ave Prob error is %.3f and ave num iters is %.3f. Ave Ein with lin regression is %.3f" %
+          (use_regression_weight, num_samples, ave_p_error / num_runs, ave_num_iter_converge / num_runs, ave_lin_reg_e_in / num_runs))
 
